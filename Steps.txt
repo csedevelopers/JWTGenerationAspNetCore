@@ -1,0 +1,406 @@
+Nuget Package: NSwag.AspNetCore
+
+
+1) Create a asp net core web api project
+2) Security Type: None
+3) Add Following to appsettings.json
+  "ConnectionStrings": {
+    "ApplicationDBContextConnection": "user id=sa;Password=sa1234;data source=192.168.105.12;initial catalog=Test;MultipleActiveResultSets=true;"
+  }
+
+4) Install following nuget packages:
+   --> Microsoft.AspNetCore.Identity.EntityFrameworkCore
+   --> Microsoft.EntityFrameworkCore.Tools
+   --> Microsoft.EntityFrameworkCore.SqlServer
+   --> Microsoft.Extensions.Identity.Stores
+   --> Microsoft.NETCore.App
+   --> Microsoft.AspNetCore.Authentication
+   --> Microsoft.AspNetCore.Authentication.JwtBearer
+
+5) Create a folder named "Data"
+
+6) Create following class in Data Folder : ApplicationDbContext.cs
+
+7) In Startup.cs:
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddControllers();
+            services.AddDbContext<ApplicationDbContext>(options =>
+               options.UseSqlServer(
+                   Configuration.GetConnectionString("ApplicationDBContextConnection")));
+        }
+
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseHttpsRedirection();
+
+            app.UseRouting();
+
+            app.UseAuthorization();
+
+            app.UseAuthentication();
+
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+        }
+
+
+
+
+8) In ApplicationDbContext.cs:
+
+    public class ApplicationDbContext : IdentityDbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+    }
+
+9) In Package Manager Console:
+   Scaffold-DbContext "Server=192.168.105.12;Database=Test;Trusted_Connection=True;MultipleActiveResultSets=true;user id=sa;password=sa1234;Integrated Security=False" Microsoft.EntityFrameworkCore.SqlServer -OutputDir Models -Tables Student ,Department
+
+
+10) Add following lines to ApplicationDbContext.cs:
+        public DbSet<Department> Department { get; set; }
+        public DbSet<Student> Student { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder builder)
+        {
+            base.OnModelCreating(builder);
+            // Customize the ASP.NET Identity model and override the defaults if needed.
+            // For example, you can rename the ASP.NET Identity table names and more.
+            // Add your customizations after calling base.OnModelCreating(builder);
+
+
+        }
+
+11) Add an empty web api controller StudentsController
+
+12) Modify the controller with:
+        private ApplicationDbContext _context;
+
+        public StudentsController(ApplicationDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public IEnumerable<Student> Get()
+        {
+            return _context.Students.ToList();
+        }
+
+
+13) In Browser : /api/students
+
+--------------------------------------------------------------------
+-------------- Asp Net User tables creation -------------------------------
+----------------------------------------------------------------------------
+14) In package manager console:
+    -> add-migration initialCreate-2
+    *** It will create *_initialCreate-2.cs. From this file delete create lines for Student,Department
+    -> update-database
+
+
+
+
+----------------------------------------------------------------------------
+----------------------------------------------------------------------------
+----------------------------------------------------------------------------
+
+Swagger Installation:
+--------------------------------------------------------
+1) Nuget Package: NSwag.AspNetCore
+
+2) Startup.cs-> ConfigureServices:
+   services.AddOpenApiDocument();
+
+3) Startup.cs-> Configure:
+   app.UseOpenApi();
+   app.UseSwaggerUi3();
+
+4) Browser: localhost/swagger/index.html
+
+
+
+----------------------------------------------------------------------------
+----------------------------------------------------------------------------
+----------------------------------------------------------------------------
+Creating Application User:
+----------------------------------------------------------------------------
+1) Create a class "ApplicationUser" in Data Folder With following content
+    public class ApplicationUser : IdentityUser
+    {
+        public ApplicationUser ShallowCopy()
+        {
+            return (ApplicationUser)this.MemberwiseClone();
+        }
+    }
+
+
+2) Create following procedure in Startup.cs:
+	private async Task createRolesandUsers(IServiceProvider serviceProvider)
+        {
+            var _roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+            var _userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            bool x = await _roleManager.RoleExistsAsync("Admin");
+            if (!x)
+            {
+                // first we create Admin rool    
+                var role = new IdentityRole();
+                role.Name = "Admin";
+                await _roleManager.CreateAsync(role);
+
+                //Here we create a Admin super user who will maintain the website                   
+
+                var user = new ApplicationUser();
+
+                user.UserName = "Admin1";
+                user.Email = "cse.com.bd";
+
+                string userPWD = "Cse@123";
+
+                IdentityResult chkUser = await _userManager.CreateAsync(user, userPWD);
+
+                //Add default User to Role Admin    
+                if (chkUser.Succeeded)
+                {
+                    var result1 = await _userManager.AddToRoleAsync(user, "Admin");
+                }
+            }
+
+            // creating Creating Manager role     
+            x = await _roleManager.RoleExistsAsync("Manager");
+            if (!x)
+            {
+                var role = new IdentityRole();
+                role.Name = "Manager";
+                await _roleManager.CreateAsync(role);
+            }
+
+            // creating Creating Employee role     
+            x = await _roleManager.RoleExistsAsync("Employee");
+            if (!x)
+            {
+                var role = new IdentityRole();
+                role.Name = "Employee";
+                await _roleManager.CreateAsync(role);
+            }
+        }
+
+3) Add following in Startup -> Configure Procedure:
+   createRolesandUsers(serviceProvider).Wait();
+
+4) Add following in the Startup -> ConfigureServices :
+            services.AddIdentity<ApplicationUser, IdentityRole>()
+                .AddEntityFrameworkStores<ApplicationDbContext>()
+                .AddDefaultTokenProviders();
+
+5) Modify the ApplicationDbContext as following:
+   public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+
+
+
+---------------------------------------------------------------------
+--------------- JWT Token Creation and Validation--------------------
+---------------------------------------------------------------------
+
+1) Create A Api controller named TokensController.
+
+2) Create A file named "AccountViewModels.cs" in Models folder
+
+3) Create a class named "LoginViewModel" :
+
+    public class LoginViewModel
+    {
+        [Required]        
+        [Display(Name = "UserName")]
+        public string UserName { get; set; }
+        [Display(Name = "Email")]
+        [EmailAddress]
+        public string Email { get; set; }
+
+        [Required]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; }
+
+        [Display(Name = "Remember me?")]
+        public bool RememberMe { get; set; }
+    }
+
+
+
+4) Modify TokensController with:
+        UserManager<ApplicationUser> userManager;
+        SignInManager<ApplicationUser> signInManager;
+
+        public TokensController(ApplicationDbContext context, SignInManager<ApplicationUser> _signInManager, UserManager<ApplicationUser> _userManager)
+        {
+            _context = context;
+            signInManager = _signInManager;
+            userManager = _userManager;
+        }
+
+
+5) Write Following function in TokensController:
+        [HttpPost]
+        [AllowAnonymous]
+        public async Task<ActionResult> Login(LoginViewModel model)
+        {
+
+            // This doesn't count login failures towards account lockout
+            // To enable password failures to trigger account lockout, change to shouldLockout: true
+            if (ModelState.IsValid)
+            {
+                var signInResult = await signInManager.PasswordSignInAsync(model.UserName, model.Password, false, false);
+                if (signInResult.Succeeded)
+                {
+                    var signingkey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this-is-signing-key"));
+                    var signingCredentials = new SigningCredentials(signingkey, SecurityAlgorithms.HmacSha256);
+                    var jwt = new JwtSecurityToken(signingCredentials:signingCredentials,expires:DateTime.Now.AddMinutes(30));
+
+                    return Ok(new JwtSecurityTokenHandler().WriteToken(jwt));
+                }
+            }
+
+            return BadRequest(ModelState);
+
+        }
+
+6) Add following line in top of DepartmentsController:
+   [Authorize(AuthenticationSchemes =JwtBearerDefaults.AuthenticationScheme)]
+
+
+7) Add following in the Startup.cs:
+            var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this-is-my-secret-key")); // This should be the key given during token creation
+            var tokenValidationParameter = new TokenValidationParameters()
+            {
+                IssuerSigningKey = signingKey,
+                ValidateIssuer = false,
+                ValidateAudience = false
+            };
+
+            // Validate the incoming JWT here
+            services.AddAuthentication(x => x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme)
+                    .AddJwtBearer(jwt =>
+                    {
+                        jwt.TokenValidationParameters = tokenValidationParameter;
+                    }
+                    );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
